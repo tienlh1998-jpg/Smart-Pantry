@@ -16,7 +16,8 @@ import {
   UtensilsCrossed,
   Layers,
   ChevronRight,
-  Info
+  Info,
+  Flame
 } from "lucide-react";
 
 // Initial seed data to make the app interactive on first load
@@ -105,6 +106,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"pantry" | "chef" | "settings">("pantry");
   const [isAddingItem, setIsAddingItem] = useState(false);
   
+  // Checkout Inventory State after cooking
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [checkoutActions, setCheckoutActions] = useState<Record<string, "consume" | "reduce" | "keep">>({});
+  const [checkoutSuccessMsg, setCheckoutSuccessMsg] = useState<string | null>(null);
+
   // Gemini recipe generator state
   const [recipe, setRecipe] = useState<SuggestedRecipe | null>(() => {
     const saved = localStorage.getItem("smart_pantry_last_recipe");
@@ -169,6 +175,91 @@ export default function App() {
     setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
+  // Open inventory checkout matching the cooked recipe
+  const handleOpenCheckout = () => {
+    if (!recipe) return;
+    
+    // Find ingredients in user's pantry that match recipe names or have expired/expiring state
+    const matches = items.filter(item => {
+      const normName = item.name.toLowerCase();
+      
+      // Match if the recipe explicitly uses this item's name or is part of a compound term
+      const isMatched = recipe.ingredientsUsedList.some(ing => {
+        const normIng = ing.toLowerCase();
+        return normIng.includes(normName) || normName.includes(normIng);
+      });
+      
+      // Include any extremely urgent items (expires < 3 days) as they might be what we asked about
+      const isUrgent = calculateDaysLeft(item.expirationDate) <= 3;
+      
+      return isMatched || isUrgent;
+    });
+
+    const initialActions: Record<string, "consume" | "reduce" | "keep"> = {};
+    matches.forEach(item => {
+      // default the matching items to "consume" or "reduce" based on whether it is a liquid/grain vs single unit
+      const isLiquidOrSpicery = ["sauces", "condiments", "spices", "gia vị"].some(cat => 
+        item.category.toLowerCase().includes(cat) || item.name.toLowerCase().includes(cat)
+      );
+      initialActions[item.id] = isLiquidOrSpicery ? "reduce" : "consume";
+    });
+    
+    // If no matches, simply load all items expiring soon so they don't get left behind
+    if (matches.length === 0) {
+      items.filter(item => calculateDaysLeft(item.expirationDate) <= 3).forEach(item => {
+        initialActions[item.id] = "consume";
+      });
+    }
+
+    setCheckoutActions(initialActions);
+    setIsCheckoutOpen(true);
+    setCheckoutSuccessMsg(null);
+  };
+
+  // Perform quantity modifications and delete completed pantry items
+  const handleApplyCheckout = () => {
+    let updatedItems = [...items];
+    
+    Object.entries(checkoutActions).forEach(([id, action]) => {
+      if (action === "consume") {
+        updatedItems = updatedItems.filter(item => item.id !== id);
+      } else if (action === "reduce") {
+        updatedItems = updatedItems.map(item => {
+          if (item.id === id) {
+            const quantityNum = parseFloat(item.quantity);
+            let updatedQuantity = item.quantity;
+            if (!isNaN(quantityNum) && quantityNum > 0) {
+              const half = quantityNum / 2;
+              updatedQuantity = Number.isInteger(half) ? half.toString() : half.toFixed(1);
+            } else {
+              updatedQuantity = `1/2 of ${item.quantity}`;
+            }
+
+            return {
+              ...item,
+              quantity: updatedQuantity,
+              notes: langCode === "vi" 
+                ? `Đã giảm một nửa lượng sau khi nấu món nhậu/việt` 
+                : `Reduced by half after cooking`
+            };
+          }
+          return item;
+        });
+      }
+    });
+
+    setItems(updatedItems);
+    setCheckoutSuccessMsg(lang.cookedApplySuccess);
+    
+    // Delayed clean close with fancy UI feedback transition
+    setTimeout(() => {
+      setIsCheckoutOpen(false);
+      setCheckoutSuccessMsg(null);
+      // Automatically swap active screen tab back to the pantry view to appreciate the new clean stock.
+      setActiveTab("pantry");
+    }, 2000);
+  };
+
   // Add customized item
   const handleAddItem = (newItem: Omit<PantryItem, "id">) => {
     const item: PantryItem = {
@@ -224,7 +315,7 @@ export default function App() {
   };
 
   // Trigger Gemini smart recipe generation
-  const handleSuggestRecipe = async () => {
+  const handleSuggestRecipe = async (type: "standard" | "drinking" = "standard") => {
     if (items.length === 0) {
       setChefError(langCode === "vi" ? "Tủ bếp của bạn đang trống rỗng!" : "Your pantry is empty.");
       return;
@@ -253,7 +344,8 @@ export default function App() {
         },
         body: JSON.stringify({
           ingredients: sortedExpiring,
-          language: langCode
+          language: langCode,
+          recipeType: type
         })
       });
 
@@ -442,23 +534,39 @@ export default function App() {
                   </div>
 
                   {/* Suggest trigger button section */}
-                  <div className="flex flex-col items-center">
-                    <button
-                      onClick={handleSuggestRecipe}
-                      disabled={isLoadingRecipe || items.length === 0}
-                      className={`w-full py-3 px-4 rounded-xl font-bold text-xs tracking-tight shadow-md flex items-center justify-center gap-2 transition-all ${
-                        isLoadingRecipe || items.length === 0
-                          ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-                          : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/15"
-                      }`}
-                      id="btn-suggest-recipe"
-                    >
-                      <UtensilsCrossed size={14} />
-                      {isLoadingRecipe ? lang.suggestingRecipe : lang.suggestButton}
-                    </button>
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className="grid grid-cols-2 gap-2 w-full">
+                      <button
+                        onClick={() => handleSuggestRecipe("standard")}
+                        disabled={isLoadingRecipe || items.length === 0}
+                        className={`py-2.5 px-1.5 rounded-xl font-bold text-[10.5px] sm:text-xs tracking-tight shadow-sm flex items-center justify-center gap-1.5 transition-all ${
+                          isLoadingRecipe || items.length === 0
+                            ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                            : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/15"
+                        }`}
+                        id="btn-suggest-recipe-standard"
+                      >
+                        <UtensilsCrossed size={12} />
+                        {isLoadingRecipe ? lang.suggestingRecipe : lang.suggestButton}
+                      </button>
+
+                      <button
+                        onClick={() => handleSuggestRecipe("drinking")}
+                        disabled={isLoadingRecipe || items.length === 0}
+                        className={`py-2.5 px-1.5 rounded-xl font-bold text-[10.5px] sm:text-xs tracking-tight shadow-sm flex items-center justify-center gap-1.5 transition-all ${
+                          isLoadingRecipe || items.length === 0
+                            ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                            : "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-700/15"
+                        }`}
+                        id="btn-suggest-recipe-drinking"
+                      >
+                        <Flame size={12} className="text-amber-200 animate-pulse" />
+                        {isLoadingRecipe ? lang.suggestingRecipe : lang.suggestDrinkingButton}
+                      </button>
+                    </div>
                     
                     {items.length === 0 && (
-                      <p className="text-[10px] text-rose-500 font-medium mt-1.5">
+                      <p className="text-[10px] text-rose-500 font-medium mt-1">
                         ⚠️ {lang.noExpiringIngredients}
                       </p>
                     )}
@@ -595,6 +703,23 @@ export default function App() {
                             </p>
                           </div>
                         )}
+
+                        {/* Interactive Checkout Remind Trigger Button */}
+                        <div className="pt-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={handleOpenCheckout}
+                            className={`w-full py-3 px-4 rounded-xl font-bold text-xs tracking-tight shadow-md flex items-center justify-center gap-2 transition-all active:scale-95 text-white ${
+                              themeColor === "rose" ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/15" :
+                              themeColor === "amber" ? "bg-amber-600 hover:bg-amber-700 shadow-amber-600/15" :
+                              themeColor === "indigo" ? "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/15" :
+                              "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/15"
+                            }`}
+                            id="btn-cooked-this-trigger"
+                          >
+                            🍳 {lang.cookedThisButton}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -805,6 +930,170 @@ export default function App() {
         <div className="hidden md:block bg-slate-900 py-1 sticky bottom-0 z-50">
           <div className="w-1/3 h-1 bg-slate-800 rounded-full mx-auto"></div>
         </div>
+
+        {/* Interactive Cooked Item - Pantry Reconciliation Modal */}
+        {isCheckoutOpen && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+            <div className="bg-white rounded-2xl w-full max-w-[340px] xs:max-w-md shadow-xl border border-slate-200 overflow-hidden flex flex-col max-h-[90%] md:max-h-[80%]">
+              
+              {/* Modal Header */}
+              <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">👩‍🍳</span>
+                  <div className="text-left">
+                    <h3 className="font-bold text-xs sm:text-sm text-slate-800 tracking-tight">
+                      {lang.cookedPopupTitle}
+                    </h3>
+                    <p className="text-[10px] text-slate-400">
+                      {langCode === "vi" ? "Đồng bộ tủ bếp thực tế" : "Adjust smart list values"}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsCheckoutOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 text-xs font-bold leading-none w-6 h-6 rounded-full hover:bg-slate-100 flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-4 overflow-y-auto space-y-4 flex-1 text-left card-scroll-container">
+                
+                {checkoutSuccessMsg ? (
+                  <div className="py-8 flex flex-col items-center justify-center text-center space-y-3">
+                    <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-2xl animate-bounce">
+                      ✓
+                    </div>
+                    <p className="text-xs font-bold text-slate-800 px-2">
+                      {checkoutSuccessMsg}
+                    </p>
+                    <p className="text-[10px] text-slate-400 animate-pulse">
+                      {langCode === "vi" ? "Đang chuẩn tế lại tủ bếp mới của bạn..." : "Returning to your clean inventory tab..."}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      {lang.cookedPopupIntro}
+                    </p>
+                    
+                    {/* Matches list */}
+                    <div className="space-y-2.5 max-h-[35vh] overflow-y-auto pr-1">
+                      {items.filter(item => checkoutActions[item.id] !== undefined).map(item => {
+                        const currentAction = checkoutActions[item.id];
+                        return (
+                          <div 
+                            key={item.id} 
+                            className={`p-2.5 rounded-xl border transition-all ${
+                              currentAction === 'consume' 
+                                ? 'bg-rose-50/40 border-rose-100' 
+                                : currentAction === 'reduce'
+                                ? 'bg-amber-50/40 border-amber-100'
+                                : 'bg-slate-50/50 border-slate-100'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start gap-2 mb-2">
+                              <div>
+                                <h5 className="text-[11px] font-bold text-slate-800">
+                                  {item.name}
+                                </h5>
+                                <span className="text-[9px] text-slate-500 block">
+                                  {item.quantity} {item.unit} • {item.category}
+                                </span>
+                              </div>
+                              
+                              <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded tracking-wide uppercase ${
+                                currentAction === 'consume' 
+                                  ? 'bg-rose-100 text-rose-700' 
+                                  : currentAction === 'reduce'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-slate-150 text-slate-600'
+                              }`}>
+                                {currentAction === 'consume' ? lang.cookedActionConsume : currentAction === 'reduce' ? lang.cookedActionReduce : lang.cookedActionKeep}
+                              </span>
+                            </div>
+
+                            {/* Action Selector Row */}
+                            <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-lg border border-slate-100 shadow-sm">
+                              <button
+                                type="button"
+                                onClick={() => setCheckoutActions(prev => ({ ...prev, [item.id]: 'consume' }))}
+                                className={`py-1 text-[9px] font-bold rounded-md transition-all ${
+                                  currentAction === 'consume'
+                                    ? 'bg-rose-600 text-white shadow-sm'
+                                    : 'text-slate-500 hover:bg-slate-50'
+                                }`}
+                              >
+                                🚮 {langCode === "vi" ? "Dùng hết" : "Use Up"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCheckoutActions(prev => ({ ...prev, [item.id]: 'reduce' }))}
+                                className={`py-1 text-[9px] font-bold rounded-md transition-all ${
+                                  currentAction === 'reduce'
+                                    ? 'bg-amber-600 text-white shadow-sm'
+                                    : 'text-slate-500 hover:bg-slate-50'
+                                }`}
+                              >
+                                📉 {langCode === "vi" ? "Giảm 1/2" : "Half-Use"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCheckoutActions(prev => ({ ...prev, [item.id]: 'keep' }))}
+                                className={`py-1 text-[9px] font-bold rounded-md transition-all ${
+                                  currentAction === 'keep'
+                                    ? 'bg-slate-600 text-white shadow-sm'
+                                    : 'text-slate-500 hover:bg-slate-50'
+                                }`}
+                              >
+                                🔒 {langCode === "vi" ? "Giữ lại" : "Keep"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Fallback if no matching item found */}
+                      {items.filter(item => checkoutActions[item.id] !== undefined).length === 0 && (
+                        <p className="text-center text-[10px] text-slate-400 py-6 italic">
+                          {langCode === "vi" ? "Không tìm thấy nguyên liệu trùng khớp trực tiếp trong tủ bếp của bạn." : "No direct matches found. Please adjust manually."}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
+
+              </div>
+
+              {/* Modal Footer */}
+              {!checkoutSuccessMsg && (
+                <div className="p-3 bg-slate-50 border-t border-slate-100 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCheckoutOpen(false)}
+                    className="flex-1 py-2 px-3 border border-slate-200 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all"
+                  >
+                    {lang.cookedClose}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyCheckout}
+                    className={`flex-1 py-2 px-3 text-white rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm ${
+                      themeColor === "rose" ? "bg-rose-600 hover:bg-rose-700" :
+                      themeColor === "amber" ? "bg-amber-600 hover:bg-amber-700" :
+                      themeColor === "indigo" ? "bg-indigo-600 hover:bg-indigo-700" :
+                      "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
+                  >
+                    {lang.cookedApplyButton}
+                  </button>
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

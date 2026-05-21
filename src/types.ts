@@ -64,6 +64,7 @@ export interface TranslationSet {
   // Chef section
   chefIntro: string;
   suggestButton: string;
+  suggestDrinkingButton: string;
   suggestingRecipe: string;
   noExpiringIngredients: string;
   ingredientsUsed: string;
@@ -85,6 +86,17 @@ export interface TranslationSet {
   expiringSoon: string;
   appDescription: string;
   quickAddTitle: string;
+
+  // I Cooked This feature
+  cookedThisButton: string;
+  cookedPopupTitle: string;
+  cookedPopupIntro: string;
+  cookedActionConsume: string;
+  cookedActionReduce: string;
+  cookedActionKeep: string;
+  cookedApplySuccess: string;
+  cookedApplyButton: string;
+  cookedClose: string;
 }
 
 export const translations: Record<AppLanguage, TranslationSet> = {
@@ -127,6 +139,7 @@ export const translations: Record<AppLanguage, TranslationSet> = {
 
     chefIntro: "Let Gemini build you an elite, traditional Vietnamese recipe based on pantry items closest to expiration in your smart list.",
     suggestButton: "Suggest Vietnamese Recipe",
+    suggestDrinkingButton: "Suggest Drinking Food (Món Nhậu)",
     suggestingRecipe: "Consulting Gemini Chef...",
     noExpiringIngredients: "Add ingredients to your pantry first to get custom recipe ideas!",
     ingredientsUsed: "Pantry items used",
@@ -146,7 +159,18 @@ export const translations: Record<AppLanguage, TranslationSet> = {
     expiredItems: "Expired Items",
     expiringSoon: "Expiring within 3 days",
     appDescription: "Smart Pantry helps you manage shelf-life and suggest authentic Vietnamese food recipes using Google's Gemini models.",
-    quickAddTitle: "Quick presets"
+    quickAddTitle: "Quick presets",
+
+    // I Cooked This feature
+    cookedThisButton: "🍳 I Cooked This!",
+    cookedPopupTitle: "Adjust Pantry Inventory",
+    cookedPopupIntro: "Select which ingredients you consumed to automatically update your smart pantry:",
+    cookedActionConsume: "Completely Consumed",
+    cookedActionReduce: "Reduced Quantity",
+    cookedActionKeep: "Keep as is",
+    cookedApplySuccess: "Pantry inventory updated successfully!",
+    cookedApplyButton: "Confirm & Update Pantry",
+    cookedClose: "Close"
   },
   vi: {
     appName: "Smart Pantry",
@@ -187,6 +211,7 @@ export const translations: Record<AppLanguage, TranslationSet> = {
 
     chefIntro: "Hãy để Gemini thiết kế một công thức ẩm thực Việt Nam tinh tế, truyền thống dựa trên các món sắp hết hạn nhất trong tủ bếp của bạn.",
     suggestButton: "Đề Xuất Món Ăn Việt",
+    suggestDrinkingButton: "Đề Xuất Món Nhậu Việt",
     suggestingRecipe: "Đang hỏi ý kiến Đầu Bếp Gemini...",
     noExpiringIngredients: "Hãy thêm nguyên liệu vào tủ để kích hoạt tính năng đề xuất món ăn!",
     ingredientsUsed: "Nguyên liệu trong tủ được dùng",
@@ -206,6 +231,17 @@ export const translations: Record<AppLanguage, TranslationSet> = {
     expiredItems: "Món đã hết hạn",
     expiringSoon: "Sắp hết hạn (dưới 3 ngày)",
     appDescription: "Smart Pantry giúp bạn quản lý thời hạn sử dụng thực phẩm và đề xuất các món ăn Việt Nam truyền thống tuyệt hảo bằng công nghệ Gemini.",
-    quickAddTitle: "Gợi ý nhanh"
+    quickAddTitle: "Gợi ý nhanh",
+
+    // I Cooked This feature
+    cookedThisButton: "🍳 Tôi Đã Nấu Món Này!",
+    cookedPopupTitle: "Cân Đối Lại Tủ Bếp",
+    cookedPopupIntro: "Chọn các nguyên liệu đã dùng để hệ thống tự động cập nhật giảm bớt hoặc xóa khỏi tủ bếp thông minh:",
+    cookedActionConsume: "Dùng Hết Hoàn Toàn",
+    cookedActionReduce: "Giảm Bớt 1/2 Số Lượng",
+    cookedActionKeep: "Giữ nguyên tủ",
+    cookedApplySuccess: "Đã cập nhật lại số lượng tủ bếp chuẩn xác!",
+    cookedApplyButton: "Xác Nhận & Cập Nhật Tủ Bếp",
+    cookedClose: "Hủy"
   }
 };
